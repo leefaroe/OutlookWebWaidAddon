@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Wait Tracker</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 14px;
+      color: #242424;
+      margin: 0;
+      background: #faf9f8;
+    }
+    h3 {
+      margin: 0 0 10px 0;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .input-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+    input[type="text"] {
+      flex: 1;
+      padding: 6px 8px;
+      border: 1px solid #d1d1d1;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    button.primary {
+      background: #0078d4;
+      color: #ffffff;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    button.primary:hover {
+      background: #106ebe;
+    }
+    .category-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .cat-btn {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 10px;
+      border: 1px solid #e1dfdd;
+      border-radius: 4px;
+      background: #ffffff;
+      cursor: pointer;
+      font-size: 13px;
+      text-align: left;
+    }
+    .cat-btn:hover {
+      background: #f3f2f1;
+    }
+    .cat-btn.applied {
+      border-color: #0078d4;
+      background: #eff6fc;
+      font-weight: 600;
+    }
+    .status {
+      font-size: 11px;
+      color: #605e5c;
+    }
+  </style>
+</head>
+<body>
+  <h3>Wait Categories</h3>
+
+  <div class="input-row">
+    <input type="text" id="newCatInput" placeholder="name (e.g. reply, invoice)" />
+    <button class="primary" id="createBtn">Add</button>
+  </div>
+
+  <div id="categoryContainer" class="category-list">
+    <div class="status">Loading categories...</div>
+  </div>
+
+  <script>
+    Office.onReady(() => {
+      loadWaitCategories();
+
+      document.getElementById("createBtn").addEventListener("click", () => {
+        const input = document.getElementById("newCatInput");
+        let val = input.value.trim();
+        if (!val) return;
+
+        if (!val.toLowerCase().startsWith("wait-")) {
+          val = "wait-" + val;
+        }
+
+        createAndApplyCategory(val);
+        input.value = "";
+      });
+    });
+
+    function loadWaitCategories() {
+      const container = document.getElementById("categoryContainer");
+      const item = Office.context.mailbox.item;
+
+      item.categories.getAsync((resApplied) => {
+        const appliedCategories = resApplied.status === Office.AsyncResultStatus.Succeeded
+          ? resApplied.value.map(c => c.displayName)
+          : [];
+
+        Office.context.mailbox.masterCategories.getAsync((resMaster) => {
+          if (resMaster.status !== Office.AsyncResultStatus.Succeeded) {
+            container.innerHTML = '<div class="status">Failed to read master categories.</div>';
+            return;
+          }
+
+          const waitCats = resMaster.value.filter(c =>
+            c.displayName.toLowerCase().startsWith("wait-")
+          );
+
+          if (waitCats.length === 0) {
+            container.innerHTML = '<div class="status">No "wait-" categories found.</div>';
+            return;
+          }
+
+          container.innerHTML = "";
+          waitCats.forEach(cat => {
+            const isApplied = appliedCategories.includes(cat.displayName);
+            const btn = document.createElement("button");
+            btn.className = "cat-btn" + (isApplied ? " applied" : "");
+            btn.innerHTML = `
+              <span>${cat.displayName}</span>
+              <span class="status">${isApplied ? "✓ Applied" : "+ Apply"}</span>
+            `;
+            btn.onclick = () => toggleCategory(cat.displayName, isApplied);
+            container.appendChild(btn);
+          });
+        });
+      });
+    }
+
+    function toggleCategory(categoryName, currentlyApplied) {
+      const item = Office.context.mailbox.item;
+      if (currentlyApplied) {
+        item.categories.removeAsync([categoryName], () => loadWaitCategories());
+      } else {
+        item.categories.addAsync([categoryName], () => loadWaitCategories());
+      }
+    }
+
+    function createAndApplyCategory(categoryName) {
+      Office.context.mailbox.masterCategories.addAsync(
+        [{ displayName: categoryName, color: Office.MailboxEnums.CategoryColor.Preset3 }],
+        () => {
+          Office.context.mailbox.item.categories.addAsync([categoryName], () => {
+            loadWaitCategories();
+          });
+        }
+      );
+    }
+  </script>
+</body>
+</html>
